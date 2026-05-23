@@ -17,22 +17,34 @@ via standard MCP (Streamable HTTP).
 - **Meta-aggregator** — canonicalisation → grouping → reciprocal-rank
   fusion → RAscore / SCScore / round-trip boosts → top-K with
   provenance.
-- **Backend adapters** — one Python module + one Docker image per
-  retrosynthesis engine. Phase 1 ships RetroSim + AiZynthFinder +
-  Chemformer forward, with scaffolding to plug in 30+ more engines.
-- **Pluggable reranker** — heuristic by default; LightGBM-based learned
-  reranker scaffolded under `training/reranker/`.
+- **Backend microservices** — one Docker image per engine, each in its
+  own conda env / CUDA pin / RDKit variant. Gateway never imports ML
+  deps.
+- **Pluggable reranker** — heuristic (default) or LightGBM-learned
+  (Phase 4), behind a single `Reranker` interface.
 
-See [`/root/.claude/plans/perform-extensive-web-search-greedy-moth.md`](#)
-for the full survey, design rationale, and backend catalogue.
+## Wrapped backends (40+)
+
+| Family | Backends |
+|---|---|
+| **Multi-step planners** | aizynth, askcos, syntheseus, synplanner, openretro, retrostar, desp, directmultistep, retrochimera, retrosynformer, ttl, deepretro, fusionretro |
+| **Template** | localretro, mhnreact, neuralsym, retrocomposer |
+| **Transformer** | chemformer, disconnection_chemformer, rsmiles, retroprime, retroformer, t5chem, tied_twoway, het_retro, retroxpert *(flagged)* |
+| **Graph** | graph2smiles, megan, graphretro, retrobridge, gln, g2retro |
+| **Similarity** | retrosim |
+| **LLM** | rsgpt, chemdfm, batgpt, retrodfm |
+| **Biocatalysis** | readretro, retrobiocat, retropath, enzyformer |
+
+All under MIT / Apache-2.0 / BSD. `GET /backends` on the running
+gateway returns the live status + license + citation for each.
 
 ## Quickstart (CPU only, no GPU needed)
 
 ```bash
-# 1) Fetch model weights / templates / stock
-bash scripts/download_weights.sh aizynth retrosim
+# 1) Fetch model weights / templates / stock for Phase-1 set
+bash scripts/download_weights.sh aizynth retrosim chemformer rascore
 
-# 2) Start gateway + AiZynthFinder backend
+# 2) Start gateway + Phase-1 backends
 docker compose -f docker/compose.cpu.yaml up -d --build
 
 # 3) Health + introspection
@@ -47,6 +59,31 @@ curl -s -X POST http://localhost:8000/retrosynthesis/single_step \
 
 # 5) Inspect the MCP surface chemclaw2 will see
 npx @modelcontextprotocol/inspector --url http://localhost:8000/mcp
+```
+
+## Bring up more backends
+
+Each non-Phase-1 backend is a Docker Compose service behind a profile.
+After fetching that backend's weights:
+
+```bash
+# Phase 2: transformer + template + graph (GPU)
+docker compose -f docker/compose.yaml --profile phase2 up -d --build
+
+# Phase 3: heavy planners + LLMs (GPU, lots of disk)
+docker compose -f docker/compose.yaml --profile phase3 up -d --build
+
+# Phase 4: biocatalysis / natural products
+docker compose -f docker/compose.yaml --profile phase4 up -d --build
+
+# Or by family
+docker compose -f docker/compose.yaml --profile template up -d --build
+docker compose -f docker/compose.yaml --profile llm      up -d --build
+
+# Enable each backend's adapter in the gateway by env var
+CHEMCLAW_RETRO_BACKEND_LOCALRETRO__ENABLED=true \
+CHEMCLAW_RETRO_BACKEND_CHEMFORMER__ENABLED=true \
+docker compose up -d gateway
 ```
 
 ## Wire into chemclaw2
@@ -78,14 +115,42 @@ See [`examples/chemclaw2_mcp_config.json`](examples/chemclaw2_mcp_config.json).
 | `backends_list`               | List enabled backends, licenses, capabilities, health.   |
 | `healthz`, `version`          | Liveness probes.                                         |
 
+## Learned reranker (Phase 4)
+
+The default heuristic reranker uses reciprocal-rank fusion + consensus
++ RAscore + round-trip. Once enough backends are live to make ensemble
+training data informative, train a LightGBM reranker:
+
+```bash
+# Replay USPTO-50K through the running gateway → feature dataset
+python -m training.reranker.build_dataset \
+    --tsv data/uspto_50k_test.tsv --out training/reranker/dataset.parquet
+
+# Train + export
+python -m training.reranker.train_lightgbm
+
+# Switch the gateway over
+export CHEMCLAW_RETRO_RERANKER=learned
+export CHEMCLAW_RETRO_LEARNED_MODEL=training/reranker/model.joblib
+docker compose restart gateway
+```
+
+See [`training/reranker/README.md`](training/reranker/README.md).
+
 ## Development
 
 ```bash
-pip install -e ".[dev,scoring,aizynth,retrosim]"
+pip install -e ".[dev,scoring,aizynth,retrosim,training]"
 pytest -q
 ruff check src tests
 mypy src
 ```
+
+## Design plan
+
+The full survey + design rationale + backend catalogue is in the saved
+plan at `/root/.claude/plans/perform-extensive-web-search-greedy-moth.md`
+(checked into your local Claude session).
 
 ## License
 

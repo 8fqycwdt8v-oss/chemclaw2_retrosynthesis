@@ -1,28 +1,280 @@
-# Full stack — Phase 2/3 backends are added here as their Dockerfiles
-# land. Reuses compose.cpu.yaml as a base.
+# Full stack — every wrapped backend, GPU profiles where applicable.
+#
+# Use `--profile <name>` flags to bring up subsets:
+#   docker compose --profile template     up
+#   docker compose --profile transformer  up
+#   docker compose --profile graph        up
+#   docker compose --profile planner      up
+#   docker compose --profile llm          up
+#   docker compose --profile biocatalysis up
+#
+# Without a profile, only the gateway + Phase-1 backends start (see
+# compose.cpu.yaml).
 
 include:
   - compose.cpu.yaml
 
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - capabilities: [gpu]
+  volumes:
+    - ../weights:/weights:ro
+  restart: unless-stopped
+
+x-cpu: &cpu
+  volumes:
+    - ../weights:/weights:ro
+  restart: unless-stopped
+
 services:
-  # Phase 2: transformer / template / graph backends. Uncomment the
-  # block once docker/backends/<name>.Dockerfile is in tree.
-  #
-  # chemformer:
-  #   build:
-  #     context: ..
-  #     dockerfile: docker/backends/chemformer.Dockerfile
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - capabilities: [gpu]
-  #   volumes:
-  #     - ../weights:/weights:ro
-  #
-  # localretro: { ... }
-  # mhnreact:   { ... }
-  # graph2smiles: { ... }
-  # megan:      { ... }
-  # rsmiles:    { ... }
-  # ...
+  # ---- Template family ----
+  localretro:
+    <<: *gpu
+    profiles: [phase2, template]
+    build: { context: .., dockerfile: docker/backends/localretro.Dockerfile }
+    ports: ["9010:9000"]
+
+  mhnreact:
+    <<: *gpu
+    profiles: [phase2, template]
+    build: { context: .., dockerfile: docker/backends/mhnreact.Dockerfile }
+    ports: ["9011:9000"]
+
+  neuralsym:
+    <<: *gpu
+    profiles: [phase2, template]
+    build: { context: .., dockerfile: docker/backends/neuralsym.Dockerfile }
+    ports: ["9012:9000"]
+
+  retrocomposer:
+    <<: *gpu
+    profiles: [phase2, template]
+    build: { context: .., dockerfile: docker/backends/retrocomposer.Dockerfile }
+    ports: ["9013:9000"]
+
+  # ---- Transformer family ----
+  chemformer:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/chemformer.Dockerfile }
+    ports: ["9020:9000"]
+
+  rsmiles:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/rsmiles.Dockerfile }
+    ports: ["9021:9000"]
+
+  retroprime:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/retroprime.Dockerfile }
+    ports: ["9022:9000"]
+
+  retroformer:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/retroformer.Dockerfile }
+    ports: ["9023:9000"]
+
+  t5chem:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/t5chem.Dockerfile }
+    ports: ["9024:9000"]
+
+  disc-chemformer:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/disconnection_chemformer.Dockerfile }
+    ports: ["9025:9000"]
+
+  tied-twoway:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/tied_twoway.Dockerfile }
+    ports: ["9026:9000"]
+
+  fusionretro:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/fusionretro.Dockerfile }
+    ports: ["9027:9000"]
+
+  het-retro:
+    <<: *gpu
+    profiles: [phase2, transformer]
+    build: { context: .., dockerfile: docker/backends/het_retro.Dockerfile }
+    ports: ["9028:9000"]
+
+  retroxpert:
+    <<: *gpu
+    profiles: [phase2, transformer]  # disabled by default — see adapter docstring
+    build: { context: .., dockerfile: docker/backends/retroxpert.Dockerfile }
+    ports: ["9029:9000"]
+
+  # ---- Graph family ----
+  graph2smiles:
+    <<: *gpu
+    profiles: [phase2, graph]
+    build: { context: .., dockerfile: docker/backends/graph2smiles.Dockerfile }
+    ports: ["9030:9000"]
+
+  megan:
+    <<: *gpu
+    profiles: [phase2, graph]
+    build: { context: .., dockerfile: docker/backends/megan.Dockerfile }
+    ports: ["9031:9000"]
+
+  graphretro:
+    <<: *gpu
+    profiles: [phase2, graph]
+    build: { context: .., dockerfile: docker/backends/graphretro.Dockerfile }
+    ports: ["9032:9000"]
+
+  retrobridge:
+    <<: *gpu
+    profiles: [phase2, graph]
+    build: { context: .., dockerfile: docker/backends/retrobridge.Dockerfile }
+    ports: ["9033:9000"]
+
+  gln:
+    <<: *gpu
+    profiles: [phase2, graph]
+    build: { context: .., dockerfile: docker/backends/gln.Dockerfile }
+    ports: ["9034:9000"]
+
+  g2retro:
+    <<: *gpu
+    profiles: [phase2, graph]
+    build: { context: .., dockerfile: docker/backends/g2retro.Dockerfile }
+    ports: ["9035:9000"]
+
+  # ---- Heavy planners ----
+  askcos:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/askcos.Dockerfile }
+    ports: ["9040:9000"]
+
+  syntheseus:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/syntheseus.Dockerfile }
+    ports: ["9041:9000"]
+
+  synplanner:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/synplanner.Dockerfile }
+    ports: ["9042:9000"]
+
+  openretro:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/openretro.Dockerfile }
+    ports: ["9043:9000"]
+
+  retrostar:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/retrostar.Dockerfile }
+    ports: ["9044:9000"]
+
+  desp:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/desp.Dockerfile }
+    ports: ["9045:9000"]
+
+  directmultistep:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/directmultistep.Dockerfile }
+    ports: ["9046:9000"]
+
+  retrochimera:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/retrochimera.Dockerfile }
+    ports: ["9047:9000"]
+
+  retrosynformer:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/retrosynformer.Dockerfile }
+    ports: ["9048:9000"]
+
+  ttl:
+    <<: *gpu
+    profiles: [phase3, planner]
+    build: { context: .., dockerfile: docker/backends/ttl.Dockerfile }
+    ports: ["9049:9000"]
+
+  # ---- LLM-style ----
+  rsgpt:
+    <<: *gpu
+    profiles: [phase3, llm]
+    build: { context: .., dockerfile: docker/backends/rsgpt.Dockerfile }
+    ports: ["9050:9000"]
+
+  chemdfm:
+    <<: *gpu
+    profiles: [phase3, llm]
+    build: { context: .., dockerfile: docker/backends/chemdfm.Dockerfile }
+    ports: ["9051:9000"]
+
+  batgpt:
+    <<: *gpu
+    profiles: [phase3, llm]
+    build: { context: .., dockerfile: docker/backends/batgpt.Dockerfile }
+    ports: ["9052:9000"]
+
+  retrodfm:
+    <<: *gpu
+    profiles: [phase3, llm]
+    build: { context: .., dockerfile: docker/backends/retrodfm.Dockerfile }
+    ports: ["9053:9000"]
+
+  deepretro:
+    <<: *cpu
+    profiles: [phase3, llm]
+    build: { context: .., dockerfile: docker/backends/deepretro.Dockerfile }
+    ports: ["9054:9000"]
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+  # ---- Biocatalysis / natural products ----
+  readretro:
+    <<: *gpu
+    profiles: [phase4, biocatalysis]
+    build: { context: .., dockerfile: docker/backends/readretro.Dockerfile }
+    ports: ["9060:9000"]
+
+  retrobiocat:
+    <<: *cpu
+    profiles: [phase4, biocatalysis]
+    build: { context: .., dockerfile: docker/backends/retrobiocat.Dockerfile }
+    ports: ["9061:9000"]
+
+  retropath:
+    <<: *cpu
+    profiles: [phase4, biocatalysis]
+    build: { context: .., dockerfile: docker/backends/retropath.Dockerfile }
+    ports: ["9062:9000"]
+
+  enzyformer:
+    <<: *gpu
+    profiles: [phase4, biocatalysis]
+    build: { context: .., dockerfile: docker/backends/enzyformer.Dockerfile }
+    ports: ["9063:9000"]
+
+  # ---- Similarity (CPU-only override of compose.cpu.yaml) ----
+  retrosim:
+    <<: *cpu
+    profiles: [phase1, similarity]
+    build: { context: .., dockerfile: docker/backends/retrosim.Dockerfile }
+    ports: ["9070:9000"]

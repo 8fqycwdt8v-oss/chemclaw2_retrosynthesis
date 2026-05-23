@@ -16,6 +16,15 @@ from ..base import SingleStepBackend
 
 log = logging.getLogger(__name__)
 
+INFO = BackendInfo(
+    name="retrosim",
+    family="similarity",
+    license="MIT",
+    citation="Coley et al., ACS Cent. Sci. 2017",
+    capabilities=["single_step"],
+    url="https://github.com/connorcoley/retrosim",
+)
+
 
 class RetroSimBackend(SingleStepBackend):
     name = "retrosim"

@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # Path to YAML weights for the heuristic aggregator.
     weights_path: Path = Path(__file__).parent / "meta" / "weights.yaml"
 
+    # Reranker selection: "heuristic" (default) or "learned" (LightGBM).
+    reranker: str = "heuristic"
+    learned_model: Path | None = None
+
     # Per-backend endpoints. Keep one default per backend; override via env:
     #   CHEMCLAW_RETRO_BACKEND_AIZYNTH__URL=http://aizynth:9000
     backend_aizynth: BackendEndpoint = BackendEndpoint(url="http://aizynth:9000", timeout_s=120.0)
@@ -97,6 +101,72 @@ class Settings(BaseSettings):
     )
     backend_retrosynformer: BackendEndpoint = BackendEndpoint(
         url="http://retrosynformer:9000", timeout_s=120.0, enabled=False
+    )
+
+    # Phase 2-4 additions: every backend in the catalogue now has an
+    # endpoint, disabled by default. Flip via env to bring online.
+    backend_openretro: BackendEndpoint = BackendEndpoint(
+        url="http://openretro:9000", timeout_s=60.0, enabled=False
+    )
+    backend_retrostar: BackendEndpoint = BackendEndpoint(
+        url="http://retrostar:9000", timeout_s=120.0, enabled=False
+    )
+    backend_desp: BackendEndpoint = BackendEndpoint(
+        url="http://desp:9000", timeout_s=120.0, enabled=False
+    )
+    backend_deepretro: BackendEndpoint = BackendEndpoint(
+        url="http://deepretro:9000", timeout_s=300.0, enabled=False
+    )
+    backend_retropath: BackendEndpoint = BackendEndpoint(
+        url="http://retropath:9000", timeout_s=120.0, enabled=False
+    )
+    backend_enzyformer: BackendEndpoint = BackendEndpoint(
+        url="http://enzyformer:9000", timeout_s=60.0, enabled=False
+    )
+    backend_het_retro: BackendEndpoint = BackendEndpoint(
+        url="http://het-retro:9000", timeout_s=60.0, enabled=False
+    )
+    backend_chemdfm: BackendEndpoint = BackendEndpoint(
+        url="http://chemdfm:9000", timeout_s=180.0, enabled=False
+    )
+    backend_batgpt: BackendEndpoint = BackendEndpoint(
+        url="http://batgpt:9000", timeout_s=180.0, enabled=False
+    )
+    backend_retrodfm: BackendEndpoint = BackendEndpoint(
+        url="http://retrodfm:9000", timeout_s=180.0, enabled=False
+    )
+    backend_ttl: BackendEndpoint = BackendEndpoint(
+        url="http://ttl:9000", timeout_s=120.0, enabled=False
+    )
+    backend_g2retro: BackendEndpoint = BackendEndpoint(
+        url="http://g2retro:9000", timeout_s=60.0, enabled=False
+    )
+    backend_fusionretro: BackendEndpoint = BackendEndpoint(
+        url="http://fusionretro:9000", timeout_s=60.0, enabled=False
+    )
+    backend_tied_twoway: BackendEndpoint = BackendEndpoint(
+        url="http://tied-twoway:9000", timeout_s=60.0, enabled=False
+    )
+    backend_retrocomposer: BackendEndpoint = BackendEndpoint(
+        url="http://retrocomposer:9000", timeout_s=60.0, enabled=False
+    )
+    backend_retroxpert: BackendEndpoint = BackendEndpoint(
+        url="http://retroxpert:9000", timeout_s=60.0, enabled=False
+    )
+    backend_disconnection_chemformer: BackendEndpoint = BackendEndpoint(
+        url="http://disc-chemformer:9000", timeout_s=60.0, enabled=False
+    )
+    backend_retroprime: BackendEndpoint = BackendEndpoint(
+        url="http://retroprime:9000", timeout_s=60.0, enabled=False
+    )
+    backend_retrobridge: BackendEndpoint = BackendEndpoint(
+        url="http://retrobridge:9000", timeout_s=60.0, enabled=False
+    )
+    backend_rsgpt: BackendEndpoint = BackendEndpoint(
+        url="http://rsgpt:9000", timeout_s=120.0, enabled=False
+    )
+    backend_synplanner: BackendEndpoint = BackendEndpoint(
+        url="http://synplanner:9000", timeout_s=120.0, enabled=False
     )
 
     # Scoring / classification / forward — typically co-located with the

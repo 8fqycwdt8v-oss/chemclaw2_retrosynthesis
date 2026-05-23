@@ -28,8 +28,12 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["retrosynthesis"])
 
 
-def _reranker() -> HeuristicReranker:
+def _reranker():
     settings = get_settings()
+    if settings.reranker == "learned" and settings.learned_model is not None:
+        from ...meta.learned_reranker import LearnedReranker
+
+        return LearnedReranker.from_joblib(Path(settings.learned_model))
     return HeuristicReranker.from_yaml(Path(settings.weights_path))
 
 
