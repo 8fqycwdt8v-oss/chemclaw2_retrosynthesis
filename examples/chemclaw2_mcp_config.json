@@ -1,0 +1,24 @@
+{
+  "_comment": "Drop this entry into chemclaw2's MCP-servers config (chemclaw2/packages/mcp-servers/). The streamable-HTTP variant connects to a running gateway; the stdio variant launches the gateway as a subprocess.",
+  "mcpServers": {
+    "chemclaw-retro": {
+      "transport": "streamable-http",
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${CHEMCLAW_RETRO_AUTH_TOKEN:-}"
+      },
+      "description": "Open-source retrosynthesis meta-model: single-step ensemble, multi-step planning, forward synthesis, scoring, and reaction classification.",
+      "tools": [
+        "retrosynthesis_single_step",
+        "retrosynthesis_multi_step",
+        "reaction_forward",
+        "reaction_classify",
+        "reaction_conditions",
+        "score_synthesizability",
+        "backends_list",
+        "healthz",
+        "version"
+      ]
+    }
+  }
+}

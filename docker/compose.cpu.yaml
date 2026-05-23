@@ -1,0 +1,30 @@
+# CPU-only smoke compose: gateway + AiZynthFinder. Runs end-to-end on a
+# laptop; CI can use the same file.
+#
+# Heavier backends (Chemformer, LocalRetro, MEGAN, ...) are added in
+# compose.yaml once their Dockerfiles land in Phase 2.
+
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/gateway/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      CHEMCLAW_RETRO_LOG_LEVEL: info
+      CHEMCLAW_RETRO_FORWARD_URL: http://chemformer:9000
+      # In CPU smoke mode only retrosim + aizynth are enabled.
+      CHEMCLAW_RETRO_BACKEND_AIZYNTH__ENABLED: "true"
+      CHEMCLAW_RETRO_BACKEND_RETROSIM__ENABLED: "true"
+    depends_on:
+      - aizynth
+
+  aizynth:
+    build:
+      context: ..
+      dockerfile: docker/backends/aizynth.Dockerfile
+    ports:
+      - "9001:9000"
+    volumes:
+      - ../weights:/weights:ro

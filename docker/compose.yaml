@@ -1,0 +1,28 @@
+# Full stack — Phase 2/3 backends are added here as their Dockerfiles
+# land. Reuses compose.cpu.yaml as a base.
+
+include:
+  - compose.cpu.yaml
+
+services:
+  # Phase 2: transformer / template / graph backends. Uncomment the
+  # block once docker/backends/<name>.Dockerfile is in tree.
+  #
+  # chemformer:
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/backends/chemformer.Dockerfile
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - capabilities: [gpu]
+  #   volumes:
+  #     - ../weights:/weights:ro
+  #
+  # localretro: { ... }
+  # mhnreact:   { ... }
+  # graph2smiles: { ... }
+  # megan:      { ... }
+  # rsmiles:    { ... }
+  # ...

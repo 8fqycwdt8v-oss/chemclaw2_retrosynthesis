@@ -1,0 +1,9 @@
+# Heuristic weights for the meta-aggregator. Keep round-trip and consensus
+# dominant since those signals are model-agnostic.
+rrf: 1.0
+consensus_count: 0.5
+round_trip_ok: 2.0
+rascore_norm: 1.0      # applied as (1 - rascore_norm) so easier = higher score
+scscore_norm: 0.3      # applied as (1 - scscore_norm)
+rxnfp_class_match: 0.4
+rrf_k: 60              # standard reciprocal-rank-fusion constant
