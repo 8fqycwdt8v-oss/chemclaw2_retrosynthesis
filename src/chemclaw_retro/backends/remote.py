@@ -88,3 +88,24 @@ class RemoteBackend(SingleStepBackend, ForwardBackend):
         resp = await self._request("POST", "/forward", json=req.model_dump())
         data = resp.json().get("products", [])
         return [ForwardProduct.model_validate(p) for p in data]
+
+    async def plan(
+        self,
+        smiles: str,
+        *,
+        max_depth: int = 6,
+        stock: str = "zinc",
+        top_k_routes: int = 5,
+    ) -> list[dict[str, Any]]:
+        """POST /plan with exactly the fields the shared backend
+        ``PlanRequest`` accepts (extra='forbid'). Gateway-only knobs like
+        ``planner`` must be stripped here, not forwarded.
+        """
+        body = {
+            "smiles": smiles,
+            "max_depth": max_depth,
+            "stock": stock,
+            "top_k_routes": top_k_routes,
+        }
+        resp = await self._request("POST", "/plan", json=body)
+        return list(resp.json().get("routes", []))

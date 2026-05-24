@@ -1,8 +1,10 @@
 """Multi-step retrosynthesis route planning.
 
-Phase-1 implementation delegates to a single planner (AiZynthFinder)
-running in its own microservice. Phase-3 will fan-out to additional
-planners and fuse routes.
+Phase-1 delegated to a single planner (AiZynthFinder). Phase-3+ supports
+every backend in :mod:`chemclaw_retro.backends.adapters._catalogue` that
+advertises ``capabilities=['multi_step']``. The route picks the planner
+from the live registry rather than a schema Literal so adding a new
+planner does not require a schema bump.
 """
 
 from __future__ import annotations
@@ -11,14 +13,38 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from ...backends.adapters._catalogue import CATALOGUE
 from ...backends.base import BackendError
 from ...backends.registry import all_backends
+from ...backends.remote import RemoteBackend
 from ...canonical import canonical_smiles
 from ...schemas import MultiStepRequest, MultiStepResponse, Route
 from ..auth import require_token
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["retrosynthesis"])
+
+
+def _resolve_planner(requested: str, available: dict[str, object]) -> str:
+    """Resolve ``planner`` to an enabled backend name advertising multi-step.
+
+    'auto' picks the first enabled multi-step backend in catalogue order
+    so the choice is deterministic across processes with the same config.
+    """
+    multi_step_capable = {
+        name
+        for name, info in CATALOGUE.items()
+        if "multi_step" in info.capabilities and name in available
+    }
+    if requested == "auto":
+        for name in sorted(multi_step_capable):
+            return name
+        raise HTTPException(503, "no multi-step planner enabled")
+    if requested not in available:
+        raise HTTPException(503, f"planner '{requested}' not enabled")
+    if requested not in multi_step_capable:
+        raise HTTPException(400, f"planner '{requested}' does not advertise multi_step capability")
+    return requested
 
 
 @router.post(
@@ -34,22 +60,26 @@ async def multi_step(req: MultiStepRequest) -> MultiStepResponse:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    backends = all_backends()
-    name = "aizynth" if req.planner == "auto" else req.planner
-    if name not in backends:
-        raise HTTPException(status_code=503, detail=f"planner '{name}' not enabled")
+    available = all_backends()
+    name = _resolve_planner(req.planner, available)
+    planner = available[name]
 
-    planner = backends[name]
-    try:
-        # Multi-step planners expose /plan via the same RemoteBackend client;
-        # the protocol mirrors /predict but with the MultiStep request body.
-        resp = await planner._request(  # type: ignore[attr-defined]
-            "POST",
-            "/plan",
-            json=req.model_dump(),
+    if not isinstance(planner, RemoteBackend):
+        raise HTTPException(
+            500,
+            f"planner '{name}' is registered but does not expose the "
+            "remote plan() contract; only RemoteBackend planners are "
+            "currently supported",
         )
-        data = resp.json()
-        routes = [Route.model_validate(r) for r in data.get("routes", [])]
+
+    try:
+        raw_routes = await planner.plan(
+            canon_target,
+            max_depth=req.max_depth,
+            stock=req.stock,
+            top_k_routes=req.top_k_routes,
+        )
+        routes = [Route.model_validate(r) for r in raw_routes]
     except BackendError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 

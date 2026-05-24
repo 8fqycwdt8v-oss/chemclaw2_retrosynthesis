@@ -26,8 +26,16 @@ def main(args: argparse.Namespace) -> None:
     from sklearn.metrics import average_precision_score
     from sklearn.model_selection import train_test_split
 
-    df = pd.read_parquet(args.dataset).fillna(0.0)
-    X = df[FEATURE_ORDER].to_numpy()
+    df = pd.read_parquet(args.dataset)
+    # reindex (not df[FEATURE_ORDER]) so missing columns fill with 0.0
+    # instead of KeyError-ing. Optional features (rxnfp_class_match,
+    # round_trip_ok, rascore_min, scscore_max) may be absent from the
+    # dataset if the gateway had those components disabled when the
+    # dataset was built.
+    missing = [c for c in FEATURE_ORDER if c not in df.columns]
+    if missing:
+        log.warning("dataset missing features %s; filling with 0.0", missing)
+    X = df.reindex(columns=FEATURE_ORDER, fill_value=0.0).fillna(0.0).to_numpy()
     y = df["label"].to_numpy()
 
     Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)

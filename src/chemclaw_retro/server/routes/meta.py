@@ -28,21 +28,26 @@ async def version() -> dict[str, str]:
     "/backends",
     response_model=list[BackendInfo],
     operation_id="backends_list",
-    summary="List enabled backends with status, license, and capabilities",
+    summary=(
+        "List every wrapped backend with status, license, capabilities, "
+        "and citation — both enabled (live status from the container) "
+        "and disabled (catalogue metadata only, enabled=false, "
+        "healthy=false)."
+    ),
 )
 async def backends_list() -> list[BackendInfo]:
-    backends = all_backends()
-    results: list[BackendInfo] = []
+    enabled = all_backends()
 
-    async def _safe(name: str, b) -> BackendInfo:
+    async def _live(name: str, b: object) -> BackendInfo:
         catalogue_info = CATALOGUE.get(name)
         try:
-            info = await b.info()
-            info.healthy = await b.healthz()
+            info = await b.info()  # type: ignore[attr-defined]
+            info.healthy = await b.healthz()  # type: ignore[attr-defined]
+            info.enabled = True
             return info
         except Exception:
             if catalogue_info is not None:
-                return catalogue_info.model_copy(update={"healthy": False})
+                return catalogue_info.model_copy(update={"enabled": True, "healthy": False})
             return BackendInfo(
                 name=name,
                 family="planner",
@@ -52,5 +57,14 @@ async def backends_list() -> list[BackendInfo]:
                 healthy=False,
             )
 
-    results = await asyncio.gather(*(_safe(n, b) for n, b in backends.items()))
-    return list(results)
+    live_results = await asyncio.gather(*(_live(n, b) for n, b in enabled.items()))
+
+    # Backends in the catalogue that aren't enabled: still surfaced so
+    # the chemclaw2 agent can see the full menu and per-backend license.
+    not_enabled = [
+        info.model_copy(update={"enabled": False, "healthy": False})
+        for name, info in CATALOGUE.items()
+        if name not in enabled
+    ]
+
+    return [*live_results, *not_enabled]

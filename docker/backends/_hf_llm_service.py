@@ -45,34 +45,52 @@ class HFLLMBackend(Backend):
         )
         self.model.eval()
 
-    def _ask(self, prompt: str, top_k: int) -> str:
+    def _ask(self, prompt: str, top_k: int) -> list[str]:
+        """Return ``top_k`` independent beams.
+
+        Critical: ``num_return_sequences`` must equal ``num_beams`` to
+        actually emit ``top_k`` distinct beams. Returning a single
+        sequence regardless of beam width silently collapses every LLM
+        backend to top-1.
+        """
         import torch  # type: ignore[import-not-found]
 
+        beams = max(1, top_k)
         tok = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         with torch.no_grad():
             out = self.model.generate(
                 **tok,
-                max_new_tokens=64 * top_k,
+                max_new_tokens=128,
                 do_sample=False,
-                num_beams=max(1, top_k),
-                num_return_sequences=1,
+                num_beams=beams,
+                num_return_sequences=beams,
                 pad_token_id=self.tokenizer.eos_token_id,
             )
-        text = self.tokenizer.decode(out[0][tok["input_ids"].shape[1]:], skip_special_tokens=True)
-        return text
+        prompt_len = tok["input_ids"].shape[1]
+        return [
+            self.tokenizer.decode(out[i][prompt_len:], skip_special_tokens=True)
+            for i in range(out.shape[0])
+        ]
 
     def predict(self, smiles: str, top_k: int) -> list[dict[str, Any]]:
         template = os.environ.get("LLM_PROMPT_TEMPLATE", DEFAULT_TEMPLATE)
         prompt = template.format(smiles=smiles, top_k=top_k)
-        completion = self._ask(prompt, top_k)
-        # Each line: dot-separated reactant SMILES. Strip numbering and
-        # markdown bullets defensively.
+        completions = self._ask(prompt, top_k)
+        # Each beam yields one reactant set; take the first non-empty
+        # cleaned line of each completion as that beam's reactants.
         out: list[dict[str, Any]] = []
-        for rank, line in enumerate(completion.splitlines()):
-            line = re.sub(r"^[\s\d\.\-\*\)]+", "", line).strip()
-            if not line:
-                continue
-            out.append({"reactants": line.split("."), "score": 1.0 - rank * 0.05, "rank": rank})
+        for rank, completion in enumerate(completions):
+            for line in completion.splitlines():
+                line = re.sub(r"^[\s\d\.\-\*\)]+", "", line).strip()
+                if line:
+                    out.append(
+                        {
+                            "reactants": line.split("."),
+                            "score": 1.0 - rank * 0.05,
+                            "rank": rank,
+                        }
+                    )
+                    break
             if len(out) >= top_k:
                 break
         return out

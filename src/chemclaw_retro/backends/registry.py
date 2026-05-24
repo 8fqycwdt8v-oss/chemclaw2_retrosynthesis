@@ -8,7 +8,6 @@ their own subprocess/process pool.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from functools import lru_cache
 
 from ..config import BackendEndpoint, Settings, get_settings
@@ -41,11 +40,24 @@ def all_backends() -> dict[str, SingleStepBackend]:
     }
 
 
-def select_backends(names: Iterable[str] | str) -> list[SingleStepBackend]:
-    """Resolve a request's ``backends`` field to concrete adapter instances."""
+def select_backends(names: list[str] | str) -> list[SingleStepBackend]:
+    """Resolve a request's ``backends`` field to concrete adapter
+    instances.
+
+    ``names`` is either the literal string ``"auto"`` or a list of
+    backend names. Bare-string non-"auto" inputs are rejected explicitly
+    so we don't iterate the string character-by-character (e.g.
+    ``select_backends("aizynth")`` would otherwise look up
+    ['a','i','z','y','n','t','h'] and report them all as missing).
+    """
     available = all_backends()
-    if names == "auto":
-        return list(available.values())
+    if isinstance(names, str):
+        if names == "auto":
+            return list(available.values())
+        raise ValueError(
+            f"select_backends expects 'auto' or a list of names; got bare "
+            f"string {names!r}. Wrap as [{names!r}] for a single backend."
+        )
     missing = [n for n in names if n not in available]
     if missing:
         raise ValueError(f"unknown or disabled backends: {missing}")

@@ -1,4 +1,13 @@
-"""GLN microservice."""
+"""GLN microservice.
+
+Upstream API note: ``Hanjun-Dai/GLN`` exposes
+``gln.test.model_inference.RetroGLN(dropbox, model_for_test)`` (positional,
+not kw — and it needs precomputed `cooked_*` artifacts at ``dropbox``).
+Earlier the env layout was incorrectly passed as kwargs; the canonical
+upstream call is positional. Operators who pre-compute the artifacts
+should set ``GLN_DROPBOX`` to the directory containing them and
+``GLN_MODEL_DUMP`` to the ``model.dump`` file.
+"""
 
 from __future__ import annotations
 
@@ -25,8 +34,18 @@ class GLNBackend(Backend):
             return
         sys.path.insert(0, "/opt/gln")
         from gln.test.model_inference import RetroGLN  # type: ignore[import-not-found]
-        ckpt = os.environ.get("GLN_CKPT", "/weights/gln/model.dump")
-        self.model = RetroGLN(dropbox=os.path.dirname(ckpt), model_dump=ckpt)
+
+        dropbox = os.environ.get("GLN_DROPBOX", "/weights/gln")
+        model_dump = os.environ.get("GLN_MODEL_DUMP", "/weights/gln/model.dump")
+        for path in (dropbox, model_dump):
+            if not os.path.exists(path):
+                raise RuntimeError(
+                    f"GLN required artifact missing: {path}. Download per "
+                    "https://github.com/Hanjun-Dai/GLN README (Dropbox link) "
+                    "and place the cooked_* artifacts + model.dump under /weights/gln."
+                )
+        # Upstream signature is positional (dropbox, model_for_test).
+        self.model = RetroGLN(dropbox, model_dump)
 
     def predict(self, smiles: str, top_k: int) -> list[dict[str, Any]]:
         out = self.model.run(smiles, beam_size=top_k, topk=top_k)

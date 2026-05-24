@@ -1,8 +1,13 @@
-# CPU-only smoke compose: gateway + AiZynthFinder. Runs end-to-end on a
-# laptop; CI can use the same file.
+# CPU-only smoke compose: gateway + AiZynthFinder + RetroSim. Runs
+# end-to-end on a laptop; CI can use the same file.
 #
-# Heavier backends (Chemformer, LocalRetro, MEGAN, ...) are added in
-# compose.yaml once their Dockerfiles land in Phase 2.
+# Round-trip forward validation is OFF-by-default in this profile —
+# chemformer needs a GPU. Set CHEMCLAW_RETRO_FORWARD_URL in your shell
+# to point at any /forward-capable backend you bring up separately, or
+# call /retrosynthesis/single_step with run_round_trip=false.
+#
+# Heavier backends (Chemformer, LocalRetro, MEGAN, ...) live in
+# compose.yaml under the phase2/phase3/phase4 profiles.
 
 services:
   gateway:
@@ -13,12 +18,17 @@ services:
       - "8000:8000"
     environment:
       CHEMCLAW_RETRO_LOG_LEVEL: info
-      CHEMCLAW_RETRO_FORWARD_URL: http://chemformer:9000
-      # In CPU smoke mode only retrosim + aizynth are enabled.
+      # Only the CPU-friendly backends are enabled out of the box.
       CHEMCLAW_RETRO_BACKEND_AIZYNTH__ENABLED: "true"
       CHEMCLAW_RETRO_BACKEND_RETROSIM__ENABLED: "true"
+      # No GPU forward backend in this profile; point at aizynth so the
+      # forward URL resolves even though aizynth itself doesn't expose
+      # /forward (round-trip calls just degrade quietly). Override via
+      # the host env to point at a real forward backend.
+      CHEMCLAW_RETRO_FORWARD_URL: ${CHEMCLAW_RETRO_FORWARD_URL:-http://aizynth:9000}
     depends_on:
       - aizynth
+      - retrosim
 
   aizynth:
     build:
@@ -26,5 +36,14 @@ services:
       dockerfile: docker/backends/aizynth.Dockerfile
     ports:
       - "9001:9000"
+    volumes:
+      - ../weights:/weights:ro
+
+  retrosim:
+    build:
+      context: ..
+      dockerfile: docker/backends/retrosim.Dockerfile
+    ports:
+      - "9002:9000"
     volumes:
       - ../weights:/weights:ro

@@ -226,18 +226,26 @@ services:
     profiles: [phase3, llm]
     build: { context: .., dockerfile: docker/backends/chemdfm.Dockerfile }
     ports: ["9051:9000"]
+    environment:
+      HF_MODEL_ID: ${CHEMDFM_HF_MODEL_ID:-OpenDFM/ChemDFM-13B-v1.0}
 
   batgpt:
     <<: *gpu
     profiles: [phase3, llm]
     build: { context: .., dockerfile: docker/backends/batgpt.Dockerfile }
     ports: ["9052:9000"]
+    environment:
+      # Operator must set BATGPT_HF_MODEL_ID; the upstream HF id has
+      # changed across releases, so we don't bake a default.
+      HF_MODEL_ID: ${BATGPT_HF_MODEL_ID:?BATGPT_HF_MODEL_ID must be set in the host env}
 
   retrodfm:
     <<: *gpu
     profiles: [phase3, llm]
     build: { context: .., dockerfile: docker/backends/retrodfm.Dockerfile }
     ports: ["9053:9000"]
+    environment:
+      HF_MODEL_ID: ${RETRODFM_HF_MODEL_ID:-OpenDFM/RetroDFM-R}
 
   deepretro:
     <<: *cpu

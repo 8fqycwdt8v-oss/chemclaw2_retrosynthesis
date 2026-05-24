@@ -15,7 +15,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from ..canonical import canonical_smiles, group_key
+from ..canonical import canonical_smiles, canonicalize_reactants
 from ..schemas import (
     BackendContribution,
     MetaPrediction,
@@ -58,15 +58,18 @@ async def aggregate(
     groups: dict[str, _Group] = {}
 
     # Group by canonical reactant set, dropping any prediction whose
-    # reactants don't canonicalise.
+    # reactants don't canonicalise. canon_reactants preserves the per-
+    # reactant boundary (so ['[Na+].[Cl-]', 'CCO'] stays two entries,
+    # not three after a naive split on '.') — the round-trip checker and
+    # the response payload both rely on that grouping.
     for backend, preds in per_backend.items():
         for p in preds:
             try:
-                key = group_key(p.reactants)
-                canon_reactants = key.split(".")
+                canon_reactants = canonicalize_reactants(p.reactants)
             except ValueError:
                 log.debug("backend=%s invalid SMILES in prediction, skipping", backend)
                 continue
+            key = ".".join(canon_reactants)
             g = groups.setdefault(key, _Group(canon_reactants, []))
             g.contributions.append((backend, p))
 
@@ -80,20 +83,36 @@ async def aggregate(
             scores_by_backend[b].append(p.score)
     mm = per_backend_minmax(dict(scores_by_backend))
 
-    # Optional async features: scored in parallel across groups.
-    rascore_tasks: dict[str, asyncio.Task[float | None]] = {}
-    scscore_tasks: dict[str, asyncio.Task[float | None]] = {}
-    rt_tasks: dict[str, asyncio.Task[bool]] = {}
+    # Optional async features: scored in parallel across groups. We
+    # gather with return_exceptions=True so one scorer's failure (e.g.
+    # the rascore container is down) downgrades only that group's
+    # feature to None instead of tearing down the whole aggregation and
+    # orphaning the remaining tasks.
+    keys = list(groups.keys())
 
-    if rascorer is not None:
-        for k, g in groups.items():
-            rascore_tasks[k] = asyncio.create_task(rascorer(g.reactants))
-    if scscorer is not None:
-        for k, g in groups.items():
-            scscore_tasks[k] = asyncio.create_task(scscorer(g.reactants))
-    if forward_checker is not None:
-        for k, g in groups.items():
-            rt_tasks[k] = asyncio.create_task(forward_checker(canonical_target, g.reactants))
+    async def _safe_map(
+        fn: Callable[..., Awaitable[object]] | None,
+        args_iter: list[tuple[object, ...]],
+    ) -> dict[str, object | None]:
+        if fn is None:
+            return {}
+        coros = [fn(*args) for args in args_iter]
+        gathered = await asyncio.gather(*coros, return_exceptions=True)
+        out: dict[str, object | None] = {}
+        for k, val in zip(keys, gathered, strict=True):
+            if isinstance(val, BaseException):
+                log.debug("feature scorer failed for group=%s: %r", k, val)
+                out[k] = None
+            else:
+                out[k] = val
+        return out
+
+    rascore_vals = await _safe_map(rascorer, [(groups[k].reactants,) for k in keys])
+    scscore_vals = await _safe_map(scscorer, [(groups[k].reactants,) for k in keys])
+    rt_vals = await _safe_map(
+        forward_checker,
+        [(canonical_target, groups[k].reactants) for k in keys],
+    )
 
     results: list[MetaPrediction] = []
     for k, g in groups.items():
@@ -101,9 +120,9 @@ async def aggregate(
         norm_scores = [normalise_score(b, p.score, mm) for b, p in g.contributions]
         mean_norm = sum(norm_scores) / len(norm_scores) if norm_scores else 0.0
 
-        rascore_min = await rascore_tasks[k] if k in rascore_tasks else None
-        scscore_max = await scscore_tasks[k] if k in scscore_tasks else None
-        round_trip = await rt_tasks[k] if k in rt_tasks else None
+        rascore_min = rascore_vals.get(k)
+        scscore_max = scscore_vals.get(k)
+        round_trip = rt_vals.get(k)
 
         feats = GroupFeatures(
             consensus_count=len({b for b, _ in g.contributions}),

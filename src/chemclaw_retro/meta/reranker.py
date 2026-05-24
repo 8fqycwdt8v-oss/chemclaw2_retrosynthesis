@@ -27,8 +27,19 @@ class HeuristicReranker(Reranker):
 
     @classmethod
     def from_yaml(cls, path: Path) -> HeuristicReranker:
-        data = yaml.safe_load(path.read_text())
-        return cls(weights={k: float(v) for k, v in data.items()})
+        if not path.exists():
+            raise RuntimeError(
+                f"reranker weights file not found: {path}. Set "
+                "CHEMCLAW_RETRO_WEIGHTS_PATH or restore the file shipped at "
+                "src/chemclaw_retro/meta/weights.yaml."
+            )
+        data = yaml.safe_load(path.read_text()) or {}
+        if not isinstance(data, dict):
+            raise RuntimeError(
+                f"reranker weights file {path} did not parse to a mapping; "
+                f"got {type(data).__name__}"
+            )
+        return cls(weights={k: float(v) for k, v in data.items() if v is not None})
 
     def score(self, f: GroupFeatures) -> float:
         w = self.w

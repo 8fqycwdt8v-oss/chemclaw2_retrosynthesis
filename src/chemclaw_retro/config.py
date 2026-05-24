@@ -177,7 +177,14 @@ class Settings(BaseSettings):
     )
 
     max_concurrency: int = 16
+
+    # Timeouts. overall_timeout_s is per-backend (single_step fan-out);
+    # aggregate_timeout_s bounds the post-fan-out scoring + round-trip
+    # phase that runs inside aggregate(); round_trip_timeout_s is the
+    # forward-client HTTP timeout used for each round-trip call.
     overall_timeout_s: float = 180.0
+    aggregate_timeout_s: float = 120.0
+    round_trip_timeout_s: float = 30.0
 
 
 _settings: Settings | None = None

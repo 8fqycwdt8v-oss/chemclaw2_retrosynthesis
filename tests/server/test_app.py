@@ -61,8 +61,20 @@ def test_healthz(client: TestClient) -> None:
 def test_backends_list(client: TestClient) -> None:
     r = client.get("/backends")
     assert r.status_code == 200
-    names = sorted(b["name"] for b in r.json())
-    assert names == ["a", "b"]
+    body = r.json()
+    by_name = {b["name"]: b for b in body}
+
+    # Enabled (fake) backends reflect live state.
+    assert by_name["a"]["enabled"] is True
+    assert by_name["a"]["healthy"] is True
+    assert by_name["b"]["enabled"] is True
+
+    # Catalogue entries that aren't enabled show up with enabled=false
+    # so clients can see the full menu + per-backend license.
+    assert "askcos" in by_name
+    assert by_name["askcos"]["enabled"] is False
+    assert by_name["askcos"]["healthy"] is False
+    assert by_name["askcos"]["license"] == "MIT"
 
 
 def test_single_step_aggregates_two_backends(client: TestClient) -> None:

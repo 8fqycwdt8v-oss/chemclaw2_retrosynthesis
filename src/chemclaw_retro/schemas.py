@@ -191,9 +191,16 @@ class MultiStepRequest(BaseModel):
     smiles: str
     max_depth: int = Field(6, ge=1, le=12)
     stock: str = Field("zinc", description="Stock identifier ('zinc' or custom).")
-    planner: Literal[
-        "auto", "aizynth", "syntheseus", "synplanner", "directmultistep", "retrosynformer"
-    ] = "auto"
+    planner: str = Field(
+        "auto",
+        description=(
+            "Backend name from /backends (must advertise capability "
+            "'multi_step'), or 'auto' to pick the first enabled multi-step "
+            "planner. Validated against the live registry at request time, "
+            "not by the schema, so new planners are reachable without a "
+            "schema bump."
+        ),
+    )
     top_k_routes: int = Field(5, ge=1, le=50)
 
 
