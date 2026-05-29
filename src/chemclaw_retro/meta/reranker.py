@@ -7,6 +7,7 @@ trained (see ``training/reranker/``).
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -17,6 +18,26 @@ from .features import GroupFeatures
 class Reranker(abc.ABC):
     @abc.abstractmethod
     def score(self, features: GroupFeatures) -> float: ...
+
+
+# Each term: (weight_key, default_weight, projection from GroupFeatures
+# to a non-negative scalar that is multiplied by the weight).
+def _scscore_norm(f: GroupFeatures) -> float:
+    # SCScore is 1..5; map to [0, 1] reversed so simpler scores higher.
+    if f.scscore_max is None:
+        return 0.0
+    return max(0.0, min(1.0, (5.0 - f.scscore_max) / 4.0))
+
+
+_HEURISTIC_TERMS: list[tuple[str, float, Callable[[GroupFeatures], float]]] = [
+    ("rrf", 1.0, lambda f: f.rrf_score),
+    ("consensus_count", 0.5, lambda f: float(f.consensus_count)),
+    ("round_trip_ok", 2.0, lambda f: 1.0 if f.round_trip_ok is True else 0.0),
+    # rascore is already in [0, 1]; higher = easier ⇒ boost.
+    ("rascore_norm", 1.0, lambda f: f.rascore_min or 0.0),
+    ("scscore_norm", 0.3, _scscore_norm),
+    ("rxnfp_class_match", 0.4, lambda f: 1.0 if f.rxnfp_class_match is True else 0.0),
+]
 
 
 class HeuristicReranker(Reranker):
@@ -42,19 +63,4 @@ class HeuristicReranker(Reranker):
         return cls(weights={k: float(v) for k, v in data.items() if v is not None})
 
     def score(self, f: GroupFeatures) -> float:
-        w = self.w
-        s = 0.0
-        s += w.get("rrf", 1.0) * f.rrf_score
-        s += w.get("consensus_count", 0.5) * f.consensus_count
-        if f.round_trip_ok is True:
-            s += w.get("round_trip_ok", 2.0)
-        if f.rascore_min is not None:
-            # rascore is already in [0, 1]; higher = easier => boost.
-            s += w.get("rascore_norm", 1.0) * f.rascore_min
-        if f.scscore_max is not None:
-            # SCScore is 1..5; map to [0, 1] reversed so simpler scores higher.
-            scscore_norm = max(0.0, min(1.0, (5.0 - f.scscore_max) / 4.0))
-            s += w.get("scscore_norm", 0.3) * scscore_norm
-        if f.rxnfp_class_match is True:
-            s += w.get("rxnfp_class_match", 0.4)
-        return s
+        return sum(self.w.get(key, default) * proj(f) for key, default, proj in _HEURISTIC_TERMS)

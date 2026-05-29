@@ -60,32 +60,77 @@ def reset_reranker_cache() -> None:
     _reranker.cache_clear()
 
 
+async def _run_aggregate(
+    req: SingleStepRequest,
+    canon_target: str,
+    per_backend: dict[str, list[SinglePrediction]],
+    settings,  # type: ignore[no-untyped-def]
+) -> list:
+    """Score + rank inside a bounded budget. The forward client is
+    constructed only if round-trip is requested, and its lifecycle is
+    tied to ``async with`` so a 504 never leaks the connection.
+    """
+    reranker = _reranker()
+
+    async def _do(forward_checker) -> list:  # type: ignore[no-untyped-def]
+        try:
+            return await asyncio.wait_for(
+                aggregate(
+                    canon_target,
+                    per_backend,
+                    reranker=reranker,
+                    top_k=req.top_k,
+                    forward_checker=forward_checker,
+                    rascorer=rascore_min,
+                    scscorer=scscore_max,
+                ),
+                timeout=settings.aggregate_timeout_s,
+            )
+        except asyncio.TimeoutError as e:
+            raise HTTPException(
+                status_code=504,
+                detail=f"aggregation exceeded aggregate_timeout_s={settings.aggregate_timeout_s}s",
+            ) from e
+
+    if not req.run_round_trip:
+        return await _do(None)
+
+    # Single AsyncClient shared across every round-trip call this
+    # request makes — avoids opening N TCP/TLS connections per group.
+    async with httpx.AsyncClient(timeout=settings.round_trip_timeout_s) as fwd_client:
+        fwd = RemoteBackend(
+            "forward",
+            settings.forward_url,
+            timeout_s=settings.round_trip_timeout_s,
+            client=fwd_client,
+        )
+
+        async def _rt(target: str, reactants: list[str]) -> bool:
+            return await round_trip_ok(target, reactants, forward=fwd)
+
+        return await _do(_rt)
+
+
 async def _query_one(
-    backend: SingleStepBackend, smiles: str, top_k: int
+    backend: SingleStepBackend, smiles: str, top_k: int, timeout_s: float
 ) -> tuple[str, list[SinglePrediction] | BackendError]:
+    """Per-backend predict() with a hard timeout. One slow backend
+    cancels only itself; the rest finish and the request returns a
+    degraded response with ``backends_failed`` populated instead of a
+    500.
+    """
     try:
-        preds = await backend.predict(smiles, top_k=top_k)
+        preds = await asyncio.wait_for(backend.predict(smiles, top_k=top_k), timeout=timeout_s)
         return backend.name, preds
+    except asyncio.TimeoutError:
+        log.warning("backend %s timed out after %.1fs", backend.name, timeout_s)
+        return backend.name, BackendError(backend.name, f"timed out after {timeout_s}s")
     except BackendError as e:
         log.warning("backend %s failed: %s", backend.name, e)
         return backend.name, e
     except Exception as e:  # pragma: no cover — defensive
         log.exception("backend %s raised unexpected error", backend.name)
         return backend.name, BackendError(backend.name, str(e), cause=e)
-
-
-async def _query_one_bounded(
-    backend: SingleStepBackend, smiles: str, top_k: int, timeout_s: float
-) -> tuple[str, list[SinglePrediction] | BackendError]:
-    """Per-backend timeout so a single slow backend cannot break the
-    whole gather. TimeoutError is converted to BackendError so the
-    aggregator path stays uniform.
-    """
-    try:
-        return await asyncio.wait_for(_query_one(backend, smiles, top_k), timeout=timeout_s)
-    except asyncio.TimeoutError:
-        log.warning("backend %s timed out after %.1fs", backend.name, timeout_s)
-        return backend.name, BackendError(backend.name, f"timed out after {timeout_s}s")
 
 
 @router.post(
@@ -114,12 +159,9 @@ async def single_step(req: SingleStepRequest) -> SingleStepResponse:
 
     settings = get_settings()
 
-    # Per-backend timeout, not gather-wide: one slow backend cancels
-    # only itself; the rest finish and the request returns a degraded
-    # response instead of a 500.
     results = await asyncio.gather(
         *(
-            _query_one_bounded(b, canon_target, req.per_backend_top_k, settings.overall_timeout_s)
+            _query_one(b, canon_target, req.per_backend_top_k, settings.overall_timeout_s)
             for b in backends
         )
     )
@@ -132,47 +174,7 @@ async def single_step(req: SingleStepRequest) -> SingleStepResponse:
         else:
             per_backend[name] = outcome
 
-    forward_checker = None
-    fwd_client: httpx.AsyncClient | None = None
-    if req.run_round_trip:
-        # Single AsyncClient shared across every round-trip call this
-        # request makes — avoids opening N TCP/TLS connections per
-        # candidate group.
-        fwd_client = httpx.AsyncClient(timeout=settings.round_trip_timeout_s)
-        fwd = RemoteBackend(
-            "forward",
-            settings.forward_url,
-            timeout_s=settings.round_trip_timeout_s,
-            client=fwd_client,
-        )
-
-        async def _rt(target: str, reactants: list[str]) -> bool:
-            return await round_trip_ok(target, reactants, forward=fwd)
-
-        forward_checker = _rt
-
-    try:
-        reranker = _reranker()
-        meta = await asyncio.wait_for(
-            aggregate(
-                canon_target,
-                per_backend,
-                reranker=reranker,
-                top_k=req.top_k,
-                forward_checker=forward_checker,
-                rascorer=rascore_min,
-                scscorer=scscore_max,
-            ),
-            timeout=settings.aggregate_timeout_s,
-        )
-    except asyncio.TimeoutError as e:
-        raise HTTPException(
-            status_code=504,
-            detail=f"aggregation exceeded aggregate_timeout_s={settings.aggregate_timeout_s}s",
-        ) from e
-    finally:
-        if fwd_client is not None:
-            await fwd_client.aclose()
+    meta = await _run_aggregate(req, canon_target, per_backend, settings)
 
     return SingleStepResponse(
         target=canon_target,

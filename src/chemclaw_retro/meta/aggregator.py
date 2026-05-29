@@ -15,6 +15,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from .._async_utils import safe_gather_map
 from ..canonical import canonical_smiles, canonicalize_reactants
 from ..schemas import (
     BackendContribution,
@@ -57,18 +58,26 @@ async def aggregate(
     canonical_target = canonical_smiles(target)
     groups: dict[str, _Group] = {}
 
+    # Per-request memo over canonicalize_reactants: many backends emit
+    # the same reactant list, and we'd otherwise hit RDKit for each
+    # backend-prediction pair. The shared module-level lru_cache helps
+    # but is concurrently shared and can churn under load.
+    canon_memo: dict[tuple[str, ...], list[str]] = {}
+
     # Group by canonical reactant set, dropping any prediction whose
     # reactants don't canonicalise. canon_reactants preserves the per-
     # reactant boundary (so ['[Na+].[Cl-]', 'CCO'] stays two entries,
-    # not three after a naive split on '.') — the round-trip checker and
-    # the response payload both rely on that grouping.
+    # not three after a naive split on '.') — the round-trip checker
+    # and the response payload both rely on that grouping.
     for backend, preds in per_backend.items():
         for p in preds:
+            memo_key = tuple(p.reactants)
             try:
-                canon_reactants = canonicalize_reactants(p.reactants)
+                canon_reactants = canon_memo.get(memo_key) or canonicalize_reactants(p.reactants)
             except ValueError:
                 log.debug("backend=%s invalid SMILES in prediction, skipping", backend)
                 continue
+            canon_memo[memo_key] = canon_reactants
             key = ".".join(canon_reactants)
             g = groups.setdefault(key, _Group(canon_reactants, []))
             g.contributions.append((backend, p))
@@ -83,35 +92,17 @@ async def aggregate(
             scores_by_backend[b].append(p.score)
     mm = per_backend_minmax(dict(scores_by_backend))
 
-    # Optional async features: scored in parallel across groups. We
-    # gather with return_exceptions=True so one scorer's failure (e.g.
-    # the rascore container is down) downgrades only that group's
-    # feature to None instead of tearing down the whole aggregation and
-    # orphaning the remaining tasks.
+    # Optional async features. The three scorers are independent of
+    # each other; fan them out concurrently so the feature-extraction
+    # phase scales as max(ra, sc, forward) instead of their sum.
     keys = list(groups.keys())
+    reactant_args = [(groups[k].reactants,) for k in keys]
+    rt_args = [(canonical_target, groups[k].reactants) for k in keys]
 
-    async def _safe_map(
-        fn: Callable[..., Awaitable[object]] | None,
-        args_iter: list[tuple[object, ...]],
-    ) -> dict[str, object | None]:
-        if fn is None:
-            return {}
-        coros = [fn(*args) for args in args_iter]
-        gathered = await asyncio.gather(*coros, return_exceptions=True)
-        out: dict[str, object | None] = {}
-        for k, val in zip(keys, gathered, strict=True):
-            if isinstance(val, BaseException):
-                log.debug("feature scorer failed for group=%s: %r", k, val)
-                out[k] = None
-            else:
-                out[k] = val
-        return out
-
-    rascore_vals = await _safe_map(rascorer, [(groups[k].reactants,) for k in keys])
-    scscore_vals = await _safe_map(scscorer, [(groups[k].reactants,) for k in keys])
-    rt_vals = await _safe_map(
-        forward_checker,
-        [(canonical_target, groups[k].reactants) for k in keys],
+    rascore_vals, scscore_vals, rt_vals = await asyncio.gather(
+        safe_gather_map(rascorer, keys, reactant_args, label="rascorer"),
+        safe_gather_map(scscorer, keys, reactant_args, label="scscorer"),
+        safe_gather_map(forward_checker, keys, rt_args, label="round_trip"),
     )
 
     results: list[MetaPrediction] = []

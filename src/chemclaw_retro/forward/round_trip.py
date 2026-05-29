@@ -25,6 +25,10 @@ async def round_trip_ok(
         log.debug("round-trip forward call failed: %s", e)
         return False
     for p in products:
+        # Cheap path: backends that already emit canonical SMILES match
+        # by string equality without paying for RDKit canonicalisation.
+        if p.smiles == target_canonical:
+            return True
         try:
             if canonical_smiles(p.smiles) == target_canonical:
                 return True

@@ -28,8 +28,8 @@ router = APIRouter(tags=["retrosynthesis"])
 def _resolve_planner(requested: str, available: dict[str, object]) -> str:
     """Resolve ``planner`` to an enabled backend name advertising multi-step.
 
-    'auto' picks the first enabled multi-step backend in catalogue order
-    so the choice is deterministic across processes with the same config.
+    'auto' picks the alphabetically-first enabled multi-step backend so
+    the choice is deterministic across processes with the same config.
     """
     multi_step_capable = {
         name
@@ -37,9 +37,10 @@ def _resolve_planner(requested: str, available: dict[str, object]) -> str:
         if "multi_step" in info.capabilities and name in available
     }
     if requested == "auto":
-        for name in sorted(multi_step_capable):
-            return name
-        raise HTTPException(503, "no multi-step planner enabled")
+        picked = min(multi_step_capable, default=None)
+        if picked is None:
+            raise HTTPException(503, "no multi-step planner enabled")
+        return picked
     if requested not in available:
         raise HTTPException(503, f"planner '{requested}' not enabled")
     if requested not in multi_step_capable:

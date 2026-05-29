@@ -41,8 +41,14 @@ async def backends_list() -> list[BackendInfo]:
     async def _live(name: str, b: object) -> BackendInfo:
         catalogue_info = CATALOGUE.get(name)
         try:
-            info = await b.info()  # type: ignore[attr-defined]
-            info.healthy = await b.healthz()  # type: ignore[attr-defined]
+            # info() and healthz() are independent round-trips; fire
+            # them concurrently so /backends scales O(1) round-trips
+            # in latency instead of O(N).
+            info, healthy = await asyncio.gather(
+                b.info(),  # type: ignore[attr-defined]
+                b.healthz(),  # type: ignore[attr-defined]
+            )
+            info.healthy = healthy
             info.enabled = True
             return info
         except Exception:

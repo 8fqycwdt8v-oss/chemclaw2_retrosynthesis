@@ -2,48 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 
-import chemclaw_retro.backends.registry as registry
-from chemclaw_retro.backends.base import SingleStepBackend
-from chemclaw_retro.schemas import BackendInfo, SinglePrediction
-
-
-class _FakeBackend(SingleStepBackend):
-    def __init__(self, name: str, preds: list[SinglePrediction]):
-        self.name = name
-        self._preds = preds
-
-    async def info(self) -> BackendInfo:
-        return BackendInfo(
-            name=self.name, family="template", license="MIT", capabilities=["single_step"]
-        )
-
-    async def healthz(self) -> bool:
-        return True
-
-    async def predict(self, smiles: str, top_k: int = 25) -> list[SinglePrediction]:
-        return self._preds[:top_k]
+from chemclaw_retro.schemas import SinglePrediction
 
 
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+def client(
+    make_fake_backend: Callable,
+    registry_with: Callable,
+) -> Iterator[TestClient]:
     pytest.importorskip("rdkit")
     pytest.importorskip("fastapi")
 
-    fake_a = _FakeBackend(
-        "a",
-        [SinglePrediction(reactants=["CCO", "CC(=O)Cl"], score=0.9, rank=0)],
+    fake_a = make_fake_backend(
+        "a", [SinglePrediction(reactants=["CCO", "CC(=O)Cl"], score=0.9, rank=0)]
     )
-    fake_b = _FakeBackend(
-        "b",
-        [SinglePrediction(reactants=["CC(=O)Cl", "CCO"], score=0.6, rank=0)],
+    fake_b = make_fake_backend(
+        "b", [SinglePrediction(reactants=["CC(=O)Cl", "CCO"], score=0.6, rank=0)]
     )
-    monkeypatch.setattr(registry, "all_backends", lambda: {"a": fake_a, "b": fake_b})
-    registry.reset_registry_cache()
+    registry_with({"a": fake_a, "b": fake_b})
 
     from chemclaw_retro.server.app import create_app
 
