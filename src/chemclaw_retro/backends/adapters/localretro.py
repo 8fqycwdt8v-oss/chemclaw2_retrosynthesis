@@ -8,7 +8,7 @@ via :class:`RemoteBackend`.
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="localretro",
@@ -17,4 +17,11 @@ INFO = BackendInfo(
     citation="Chen & Jung, JACS Au 2021",
     capabilities=["single_step"],
     url="https://github.com/kaist-amsg/LocalRetro",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/localretro.Dockerfile",
+        service="localretro",
+        host_port=9010,
+        profiles=["phase2", "template"],
+        gpu=True,
+    ),
 )

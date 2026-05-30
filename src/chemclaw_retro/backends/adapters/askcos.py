@@ -8,7 +8,7 @@ use it as both a single-step backend and a planner.
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="askcos",
@@ -17,4 +17,11 @@ INFO = BackendInfo(
     citation="ASKCOS Consortium, Acc. Chem. Res. 2025",
     capabilities=["single_step", "multi_step", "forward"],
     url="https://github.com/ASKCOS",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/askcos.Dockerfile",
+        service="askcos",
+        host_port=9040,
+        profiles=["phase3", "planner"],
+        gpu=True,
+    ),
 )

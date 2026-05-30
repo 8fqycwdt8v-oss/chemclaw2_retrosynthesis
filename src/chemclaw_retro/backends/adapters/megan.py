@@ -5,7 +5,7 @@ as ``megan_data.zip`` on the v1.1 GitHub release."""
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="megan",
@@ -14,4 +14,11 @@ INFO = BackendInfo(
     citation="Sacha et al., JCIM 2021",
     capabilities=["single_step"],
     url="https://github.com/molecule-one/megan",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/megan.Dockerfile",
+        service="megan",
+        host_port=9031,
+        profiles=["phase2", "graph"],
+        gpu=True,
+    ),
 )

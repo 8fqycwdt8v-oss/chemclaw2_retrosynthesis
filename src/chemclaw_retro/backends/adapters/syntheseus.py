@@ -9,7 +9,7 @@ aggregator (they would all appear as a single ``syntheseus`` backend).
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="syntheseus",
@@ -18,4 +18,11 @@ INFO = BackendInfo(
     citation="Maziarz et al., Faraday Discuss. 2024",
     capabilities=["single_step", "multi_step"],
     url="https://github.com/microsoft/syntheseus",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/syntheseus.Dockerfile",
+        service="syntheseus",
+        host_port=9041,
+        profiles=["phase3", "planner"],
+        gpu=True,
+    ),
 )

@@ -26,12 +26,14 @@ from ..schemas import (
     ForwardRequest,
     SinglePrediction,
 )
-from .base import BackendError, ForwardBackend, SingleStepBackend
+from .base import BackendError, ForwardBackend, MultiStepPlanner, SingleStepBackend
 
 
-class RemoteBackend(SingleStepBackend, ForwardBackend):
-    """Single class covers both single-step prediction and forward synthesis;
-    forward is only exercised by backends that advertise the capability."""
+class RemoteBackend(SingleStepBackend, ForwardBackend, MultiStepPlanner):
+    """Single class covers single-step prediction, forward synthesis,
+    and multi-step planning over the uniform HTTP contract every
+    backend container speaks. Whether each method is exercised at
+    runtime is decided by the backend's advertised ``capabilities``."""
 
     def __init__(
         self,

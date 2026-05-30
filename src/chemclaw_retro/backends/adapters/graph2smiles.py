@@ -5,7 +5,7 @@ USPTO_STEREO are on Google Drive; pull them with
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="graph2smiles",
@@ -14,4 +14,11 @@ INFO = BackendInfo(
     citation="Tu & Coley, JCIM 2022",
     capabilities=["single_step", "forward"],
     url="https://github.com/coleygroup/Graph2SMILES",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/graph2smiles.Dockerfile",
+        service="graph2smiles",
+        host_port=9030,
+        profiles=["phase2", "graph"],
+        gpu=True,
+    ),
 )

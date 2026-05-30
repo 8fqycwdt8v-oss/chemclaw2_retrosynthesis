@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="retrostar",
@@ -11,4 +11,11 @@ INFO = BackendInfo(
     citation="Chen et al., ICML 2020",
     capabilities=["multi_step"],
     url="https://github.com/binghong-ml/retro_star",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/retrostar.Dockerfile",
+        service="retrostar",
+        host_port=9044,
+        profiles=["phase3", "planner"],
+        gpu=True,
+    ),
 )

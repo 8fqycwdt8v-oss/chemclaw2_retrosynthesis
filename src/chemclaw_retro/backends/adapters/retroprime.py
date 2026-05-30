@@ -3,7 +3,7 @@ retrosynthesis (Wang et al., Chem. Eng. J. 2021)."""
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="retroprime",
@@ -12,4 +12,11 @@ INFO = BackendInfo(
     citation="Wang et al., Chem. Eng. J. 2021",
     capabilities=["single_step"],
     url="https://github.com/wangxr0526/RetroPrime",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/retroprime.Dockerfile",
+        service="retroprime",
+        host_port=9022,
+        profiles=["phase2", "transformer"],
+        gpu=True,
+    ),
 )

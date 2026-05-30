@@ -14,9 +14,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...backends.adapters._catalogue import CATALOGUE
-from ...backends.base import BackendError
+from ...backends.base import BackendError, MultiStepPlanner
 from ...backends.registry import all_backends
-from ...backends.remote import RemoteBackend
 from ...canonical import canonical_smiles
 from ...schemas import MultiStepRequest, MultiStepResponse, Route
 from ..auth import require_token
@@ -65,12 +64,12 @@ async def multi_step(req: MultiStepRequest) -> MultiStepResponse:
     name = _resolve_planner(req.planner, available)
     planner = available[name]
 
-    if not isinstance(planner, RemoteBackend):
+    if not isinstance(planner, MultiStepPlanner):
         raise HTTPException(
             500,
-            f"planner '{name}' is registered but does not expose the "
-            "remote plan() contract; only RemoteBackend planners are "
-            "currently supported",
+            f"planner '{name}' is registered but does not implement the "
+            "MultiStepPlanner contract; capability='multi_step' is out of "
+            "sync with the registered adapter.",
         )
 
     try:

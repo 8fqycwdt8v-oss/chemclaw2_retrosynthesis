@@ -1,11 +1,10 @@
 """RetroChimera microservice.
 
-Upstream note: Chimera is an internal ensemble (NeuralLoc + R-SMILES 2
-+ learned reranker) from Microsoft + Novartis. The public release does
+Upstream Chimera is an internal ensemble (NeuralLoc + R-SMILES 2 +
+learned reranker) from Microsoft + Novartis. The public release does
 not ship a uniform ``Chimera.load`` classmethod; the loading API
-changes across releases. This service tries the documented constructor
-patterns in order and fails loudly with a clear message so the
-operator can update ``RETROCHIMERA_LOADER``.
+changes across releases. We try the documented constructor patterns
+in order, with ``RETROCHIMERA_LOADER`` to pin one.
 """
 
 from __future__ import annotations
@@ -14,7 +13,14 @@ import os
 import sys
 from typing import Any
 
-from _base import Backend, make_app
+from _base import Backend, _try_loaders, make_app
+
+
+def _get(h: Any, key: str, default: Any = None) -> Any:
+    """Read ``key`` off ``h`` whether it's a dict or an object."""
+    if isinstance(h, dict):
+        return h.get(key, default)
+    return getattr(h, key, default)
 
 
 class RetroChimeraBackend(Backend):
@@ -39,38 +45,30 @@ class RetroChimeraBackend(Backend):
                 "download per https://github.com/microsoft/retrochimera README"
             )
 
-        errors: list[str] = []
-        # Try the documented entry points in order.
-        try:
+        def _via_api_load() -> object:
             from retrochimera.api import Chimera  # type: ignore[import-not-found]
 
-            self.model = Chimera.load(weights) if hasattr(Chimera, "load") else Chimera(weights)
-            return
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"retrochimera.api.Chimera: {e!r}")
+            return Chimera.load(weights) if hasattr(Chimera, "load") else Chimera(weights)
 
-        try:
+        def _via_ensemble() -> object:
             from chimera.ensemble import EnsembleModel  # type: ignore[import-not-found]
 
-            self.model = EnsembleModel.from_pretrained(weights)
-            return
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"chimera.ensemble.EnsembleModel: {e!r}")
+            return EnsembleModel.from_pretrained(weights)
 
-        raise RuntimeError(
-            "RetroChimera load failed for every known upstream entry "
-            "point. The upstream package layout changes across releases; "
-            "verify the Python API for the installed version and update "
-            "docker/backends/retrochimera_service.py. Tried: "
-            + "; ".join(errors)
+        self.model = _try_loaders(
+            [("api", _via_api_load), ("ensemble", _via_ensemble)],
+            pin_env="RETROCHIMERA_LOADER",
+            label="RetroChimera",
         )
 
     def predict(self, smiles: str, top_k: int) -> list[dict[str, Any]]:
         hits = self.model.predict(smiles, top_k=top_k)
         return [
-            {"reactants": getattr(h, "reactants", h.get("reactants") if isinstance(h, dict) else None),
-             "score": float(getattr(h, "score", h.get("score") if isinstance(h, dict) else 0.0)),
-             "rank": i}
+            {
+                "reactants": _get(h, "reactants"),
+                "score": float(_get(h, "score", 0.0)),
+                "rank": i,
+            }
             for i, h in enumerate(hits[:top_k])
         ]
 

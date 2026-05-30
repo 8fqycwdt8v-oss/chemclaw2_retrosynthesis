@@ -18,8 +18,6 @@ from ..schemas import (
     BackendInfo,
     ForwardProduct,
     ForwardRequest,
-    MultiStepRequest,
-    Route,
     SinglePrediction,
 )
 
@@ -50,7 +48,13 @@ class ForwardBackend(abc.ABC):
 
 
 class MultiStepPlanner(abc.ABC):
-    """Abstract multi-step retrosynthetic planner."""
+    """Abstract multi-step retrosynthetic planner.
+
+    The public ``plan(...)`` signature takes the same four fields the
+    backend's ``/plan`` endpoint accepts: ``smiles`` plus the search
+    knobs. Gateway-only fields (e.g. which planner to pick) are
+    consumed by the route, not forwarded.
+    """
 
     name: str
 
@@ -58,7 +62,15 @@ class MultiStepPlanner(abc.ABC):
     async def info(self) -> BackendInfo: ...
 
     @abc.abstractmethod
-    async def plan(self, req: MultiStepRequest) -> list[Route]: ...
+    async def plan(
+        self,
+        smiles: str,
+        *,
+        max_depth: int = 6,
+        stock: str = "zinc",
+        top_k_routes: int = 5,
+    ) -> list[dict]:
+        """Return a list of Route dicts (validated by the route)."""
 
 
 class BackendError(RuntimeError):

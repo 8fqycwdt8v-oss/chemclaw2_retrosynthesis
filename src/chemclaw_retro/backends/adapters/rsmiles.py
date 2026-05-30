@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="rsmiles",
@@ -11,4 +11,11 @@ INFO = BackendInfo(
     citation="Zhong et al., Chem. Sci. 2022",
     capabilities=["single_step"],
     url="https://github.com/otori-bird/retrosynthesis",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/rsmiles.Dockerfile",
+        service="rsmiles",
+        host_port=9021,
+        profiles=["phase2", "transformer"],
+        gpu=True,
+    ),
 )

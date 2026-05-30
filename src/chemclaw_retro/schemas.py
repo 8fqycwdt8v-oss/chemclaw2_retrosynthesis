@@ -286,6 +286,30 @@ class Conditions(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class BackendDeploy(BaseModel):
+    """Deployment metadata for one backend microservice — the single
+    source of truth that ``scripts/gen_compose.py`` consumes to emit
+    ``docker/compose.yaml`` and that the gateway exposes via ``/backends``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dockerfile: str = Field(..., description="Path relative to repo root.")
+    service: str = Field(
+        ..., description="docker-compose service name (and DNS host inside the network)."
+    )
+    host_port: int = Field(..., description="Port exposed on the host.")
+    profiles: list[str] = Field(default_factory=list)
+    gpu: bool = True
+    environment: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Extra env passed to the service. Values may use compose-style "
+            "${VAR:-default} interpolation; the generator emits them verbatim."
+        ),
+    )
+
+
 class BackendInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -320,3 +344,10 @@ class BackendInfo(BaseModel):
     url: str | None = None
     enabled: bool = True
     healthy: bool = True
+
+    # ``deploy`` is None for backends that have no container of their
+    # own (e.g. scoring/classification stubs that live in-process). For
+    # every wrapped backend it carries enough info for
+    # scripts/gen_compose.py to emit the compose service block without
+    # a parallel hand-maintained list.
+    deploy: BackendDeploy | None = None

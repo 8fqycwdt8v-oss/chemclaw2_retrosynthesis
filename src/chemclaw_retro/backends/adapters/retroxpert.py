@@ -8,7 +8,7 @@ in."""
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="retroxpert",
@@ -17,5 +17,12 @@ INFO = BackendInfo(
     citation="Yan et al., NeurIPS 2020 (FLAG: information-leak disclosed)",
     capabilities=["single_step"],
     url="https://github.com/uta-smile/RetroXpert",
-    enabled=False,  # opt-in only until leak-fix branch lands
+    enabled=False,  # opt-in only until leak-fix branch lands,
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/retroxpert.Dockerfile",
+        service="retroxpert",
+        host_port=9029,
+        profiles=["phase2", "transformer"],
+        gpu=True,
+    ),
 )

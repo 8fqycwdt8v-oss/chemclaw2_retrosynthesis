@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="retrobiocat",
@@ -11,4 +11,11 @@ INFO = BackendInfo(
     citation="Finnigan et al., Nat. Catal. 2021",
     capabilities=["multi_step"],
     url="https://github.com/wjafinnigan/RetroBioCat",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/retrobiocat.Dockerfile",
+        service="retrobiocat",
+        host_port=9061,
+        profiles=["phase4", "biocatalysis"],
+        gpu=False,
+    ),
 )

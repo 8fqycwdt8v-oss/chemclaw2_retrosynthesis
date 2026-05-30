@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="retroformer",
@@ -11,4 +11,11 @@ INFO = BackendInfo(
     citation="Wan et al., ICML 2022",
     capabilities=["single_step"],
     url="https://github.com/yuewan2/Retroformer",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/retroformer.Dockerfile",
+        service="retroformer",
+        host_port=9023,
+        profiles=["phase2", "transformer"],
+        gpu=True,
+    ),
 )

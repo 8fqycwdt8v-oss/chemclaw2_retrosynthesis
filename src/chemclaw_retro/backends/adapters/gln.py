@@ -3,7 +3,7 @@ NeurIPS 2019). Checkpoints on Dropbox; see scripts/download_weights.sh."""
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="gln",
@@ -12,4 +12,11 @@ INFO = BackendInfo(
     citation="Dai et al., NeurIPS 2019",
     capabilities=["single_step"],
     url="https://github.com/Hanjun-Dai/GLN",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/gln.Dockerfile",
+        service="gln",
+        host_port=9034,
+        profiles=["phase2", "graph"],
+        gpu=True,
+    ),
 )

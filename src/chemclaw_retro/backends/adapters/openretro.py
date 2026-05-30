@@ -3,7 +3,7 @@ GLN, NeuralSym, RetroXpert, Transformer."""
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="openretro",
@@ -12,4 +12,11 @@ INFO = BackendInfo(
     citation="Coley group, OpenRetro README",
     capabilities=["single_step"],
     url="https://github.com/coleygroup/openretro",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/openretro.Dockerfile",
+        service="openretro",
+        host_port=9043,
+        profiles=["phase3", "planner"],
+        gpu=True,
+    ),
 )

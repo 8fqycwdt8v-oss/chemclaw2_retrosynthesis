@@ -5,7 +5,7 @@ the gateway talks to it via :class:`RemoteBackend`."""
 
 from __future__ import annotations
 
-from ...schemas import BackendInfo
+from ...schemas import BackendDeploy, BackendInfo
 
 INFO = BackendInfo(
     name="chemformer",
@@ -14,4 +14,11 @@ INFO = BackendInfo(
     citation="Irwin et al., Mach. Learn.: Sci. Technol. 2022",
     capabilities=["single_step", "forward"],
     url="https://github.com/MolecularAI/Chemformer",
+    deploy=BackendDeploy(
+        dockerfile="docker/backends/chemformer.Dockerfile",
+        service="chemformer",
+        host_port=9020,
+        profiles=["phase2", "transformer"],
+        gpu=True,
+    ),
 )

@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..._budget import Budget
 from ...backends.base import BackendError, SingleStepBackend
 from ...backends.registry import select_backends
 from ...backends.remote import RemoteBackend
@@ -60,57 +61,6 @@ def reset_reranker_cache() -> None:
     _reranker.cache_clear()
 
 
-async def _run_aggregate(
-    req: SingleStepRequest,
-    canon_target: str,
-    per_backend: dict[str, list[SinglePrediction]],
-    settings,  # type: ignore[no-untyped-def]
-) -> list:
-    """Score + rank inside a bounded budget. The forward client is
-    constructed only if round-trip is requested, and its lifecycle is
-    tied to ``async with`` so a 504 never leaks the connection.
-    """
-    reranker = _reranker()
-
-    async def _do(forward_checker) -> list:  # type: ignore[no-untyped-def]
-        try:
-            return await asyncio.wait_for(
-                aggregate(
-                    canon_target,
-                    per_backend,
-                    reranker=reranker,
-                    top_k=req.top_k,
-                    forward_checker=forward_checker,
-                    rascorer=rascore_min,
-                    scscorer=scscore_max,
-                ),
-                timeout=settings.aggregate_timeout_s,
-            )
-        except asyncio.TimeoutError as e:
-            raise HTTPException(
-                status_code=504,
-                detail=f"aggregation exceeded aggregate_timeout_s={settings.aggregate_timeout_s}s",
-            ) from e
-
-    if not req.run_round_trip:
-        return await _do(None)
-
-    # Single AsyncClient shared across every round-trip call this
-    # request makes — avoids opening N TCP/TLS connections per group.
-    async with httpx.AsyncClient(timeout=settings.round_trip_timeout_s) as fwd_client:
-        fwd = RemoteBackend(
-            "forward",
-            settings.forward_url,
-            timeout_s=settings.round_trip_timeout_s,
-            client=fwd_client,
-        )
-
-        async def _rt(target: str, reactants: list[str]) -> bool:
-            return await round_trip_ok(target, reactants, forward=fwd)
-
-        return await _do(_rt)
-
-
 async def _query_one(
     backend: SingleStepBackend, smiles: str, top_k: int, timeout_s: float
 ) -> tuple[str, list[SinglePrediction] | BackendError]:
@@ -131,6 +81,59 @@ async def _query_one(
     except Exception as e:  # pragma: no cover — defensive
         log.exception("backend %s raised unexpected error", backend.name)
         return backend.name, BackendError(backend.name, str(e), cause=e)
+
+
+async def _run_aggregate(
+    req: SingleStepRequest,
+    canon_target: str,
+    per_backend: dict[str, list[SinglePrediction]],
+    budget: Budget,
+    settings,  # type: ignore[no-untyped-def]
+) -> list:
+    """Score + rank inside the request's remaining budget. Forward
+    client only opened if round-trip is requested, lifetime tied to
+    ``async with`` so a 504 never leaks the connection.
+    """
+    reranker = _reranker()
+
+    async def _do(forward_checker) -> list:  # type: ignore[no-untyped-def]
+        agg_budget = budget.for_aggregate()
+        try:
+            return await asyncio.wait_for(
+                aggregate(
+                    canon_target,
+                    per_backend,
+                    reranker=reranker,
+                    top_k=req.top_k,
+                    forward_checker=forward_checker,
+                    rascorer=rascore_min,
+                    scscorer=scscore_max,
+                ),
+                timeout=agg_budget,
+            )
+        except asyncio.TimeoutError as e:
+            raise HTTPException(
+                status_code=504,
+                detail=f"aggregation exceeded remaining budget {agg_budget:.1f}s",
+            ) from e
+
+    if not req.run_round_trip:
+        return await _do(None)
+
+    # Single shared AsyncClient — avoids opening N TCP/TLS connections
+    # per candidate group during round-trip validation.
+    async with httpx.AsyncClient(timeout=budget.for_round_trip()) as fwd_client:
+        fwd = RemoteBackend(
+            "forward",
+            settings.forward_url,
+            timeout_s=budget.for_round_trip(),
+            client=fwd_client,
+        )
+
+        async def _rt(target: str, reactants: list[str]) -> bool:
+            return await round_trip_ok(target, reactants, forward=fwd)
+
+        return await _do(_rt)
 
 
 @router.post(
@@ -158,10 +161,16 @@ async def single_step(req: SingleStepRequest) -> SingleStepResponse:
         raise HTTPException(status_code=503, detail="no backends enabled")
 
     settings = get_settings()
+    budget = Budget.fresh(
+        total_s=settings.request_timeout_s,
+        per_backend_s=settings.overall_timeout_s,
+        aggregate_s=settings.aggregate_timeout_s,
+        round_trip_s=settings.round_trip_timeout_s,
+    )
 
     results = await asyncio.gather(
         *(
-            _query_one(b, canon_target, req.per_backend_top_k, settings.overall_timeout_s)
+            _query_one(b, canon_target, req.per_backend_top_k, budget.for_per_backend())
             for b in backends
         )
     )
@@ -174,7 +183,7 @@ async def single_step(req: SingleStepRequest) -> SingleStepResponse:
         else:
             per_backend[name] = outcome
 
-    meta = await _run_aggregate(req, canon_target, per_backend, settings)
+    meta = await _run_aggregate(req, canon_target, per_backend, budget, settings)
 
     return SingleStepResponse(
         target=canon_target,
